@@ -43,6 +43,9 @@ INSTALLED_APPS = [
 
     # local apps
     'comments',
+    
+    # user management
+    'users',
 ]
 
 REST_FRAMEWORK = {
