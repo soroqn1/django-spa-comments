@@ -5,6 +5,7 @@ from PIL import Image, UnidentifiedImageError
 from rest_framework import serializers
 
 from .models import Comment
+from bleach.sanitizer import Cleaner
 
 
 ALLOWED_IMAGE_TYPES = {
@@ -14,6 +15,18 @@ ALLOWED_IMAGE_TYPES = {
 }
 MAX_IMAGE_SIZE = 5 * 1024 * 1024
 MAX_TEXT_SIZE = 100 * 1024
+ALLOWED_TAGS = ['a', 'code', 'i', 'strong']
+ALLOWED_ATTRS = {'a': ['href', 'title']}
+ALLOWED_PROTOCOLS = ['http', 'https', 'mailto']
+
+
+cleaner = Cleaner(
+    tags=ALLOWED_TAGS,
+    attributes=ALLOWED_ATTRS,
+    protocols=ALLOWED_PROTOCOLS,
+    strip=True,
+    strip_comments=True,
+)
 
 
 class CommentSerializer(serializers.ModelSerializer):
@@ -71,6 +84,12 @@ class CommentSerializer(serializers.ModelSerializer):
             return file
 
         raise serializers.ValidationError('Допустимы только PNG, JPG, GIF или TXT')
+
+    def validate_text(self, value: str):
+        cleaned = cleaner.clean(value or '')
+        if not cleaned.strip():
+            raise serializers.ValidationError('Введите сообщение')
+        return cleaned
 
     def create(self, validated_data):
         attachment = validated_data.get('attachment')
