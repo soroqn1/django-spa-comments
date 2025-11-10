@@ -1,8 +1,7 @@
 <template>
   <article
     class="border border-gray-100 bg-white shadow-none"
-    :class="depth ? 'ml-10 mt-4 rounded-none' : 'mt-6 rounded-lg'"
-    style="border-radius: 0 !important;"
+    :class="depth ? 'mt-4 rounded-none' : 'mt-6 rounded-lg'"
     :id="anchorId"
   >
     <CommentHeader
@@ -66,8 +65,8 @@
 
     <div
       v-if="comment.replies.length"
-      class="mt-3 ml-10 border-l border-gray-200 border-t-0 pl-5 space-y-4"
-      style="border-radius: 0 !important;"
+      class="mt-3 border-l border-gray-200 border-t-0 space-y-4"
+      :style="repliesStyle"
     >
       <CommentItem
         v-for="child in comment.replies"
@@ -100,7 +99,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, type CSSProperties } from 'vue'
 import CommentHeader from './CommentHeader.vue'
 import type { CommentNode } from '../types/comment'
 
@@ -114,6 +113,22 @@ const emit = defineEmits<{
 }>()
 
 const depth = computed(() => props.depth ?? 0)
+const MAX_THREAD_DEPTH = 5
+
+const repliesStyle = computed<CSSProperties>(() => {
+  if (depth.value >= MAX_THREAD_DEPTH) {
+    return {
+      paddingLeft: '0px',
+      borderLeftColor: 'rgba(101, 113, 255, 0.35)',
+      borderLeftStyle: 'dashed'
+    }
+  }
+  return {
+    paddingLeft: '24px',
+    borderLeftColor: '#e5e7eb',
+    borderLeftStyle: 'solid'
+  }
+})
 const anchorId = computed(() => `comment-${props.comment.id}`)
 
 const avatar = computed(() => {
