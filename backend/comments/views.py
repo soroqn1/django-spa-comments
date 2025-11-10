@@ -1,4 +1,5 @@
 from rest_framework import viewsets, permissions
+from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from .models import Comment
 from .serializers import CommentSerializer
 
@@ -6,6 +7,7 @@ from .serializers import CommentSerializer
 class CommentViewSet(viewsets.ModelViewSet):
     queryset = Comment.objects.all().order_by('-created_at')
     serializer_class = CommentSerializer
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
 
     def get_permissions(self):
         if self.action in ['list', 'retrieve']:

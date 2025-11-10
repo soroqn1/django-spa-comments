@@ -37,7 +37,7 @@
         @cancel-reply="replyTarget = null"
       />
       <p v-if="formError" class="text-sm text-rose-500">{{ formError }}</p>
-      <p v-else-if="pendingAttachment" class="text-xs text-slate-500">Вложение сохранено локально и пока не отправляется на сервер.</p>
+  <p v-else-if="pendingAttachment" class="text-xs text-slate-500">Загружаем вложение…</p>
 
       <section class="rounded-xl border border-gray-100 bg-white shadow-sm">
         <div class="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 px-5 py-4">
@@ -201,7 +201,7 @@ const submit = async ({ user_name, email, home_page, text, attachment }: {
       text: sanitizeHtml(text),
       parent: replyTarget.value?.id ?? null
     }
-    const saved = await createComment(payload)
+    const saved = await createComment(payload, attachment?.file ?? null)
     raw.value = [{ ...saved, text: sanitizeHtml(saved.text) }, ...raw.value]
     replyTarget.value = null
     page.value = 1
@@ -212,6 +212,7 @@ const submit = async ({ user_name, email, home_page, text, attachment }: {
     formError.value = err instanceof Error ? err.message : 'Не удалось сохранить комментарий'
   } finally {
     submitting.value = false
+    pendingAttachment.value = null
   }
 }
 
