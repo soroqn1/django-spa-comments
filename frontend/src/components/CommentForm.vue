@@ -102,11 +102,6 @@
       <p v-if="errors.captcha" class="text-xs text-rose-500">{{ errors.captcha }}</p>
     </div>
 
-    <div class="space-y-3">
-      <h3 class="text-sm font-medium text-slate-600">Предпросмотр</h3>
-      <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 whitespace-pre-wrap break-words" v-html="preview" />
-    </div>
-
     <button
       type="submit"
       class="w-full rounded-lg bg-indigo-600 px-4 py-3 text-white font-semibold hover:bg-indigo-500 transition disabled:bg-indigo-300"
@@ -117,7 +112,6 @@
 
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, toRefs, watch } from 'vue'
-import { sanitizeHtml } from '../utils/sanitizeHtml'
 import { createCaptcha } from '../utils/captcha'
 import type { CommentNode } from '../types/comment'
 
@@ -201,8 +195,6 @@ const actions = [
 ] as const
 
 type ActionTag = (typeof actions)[number]['tag']
-
-const preview = computed(() => sanitizeHtml(form.text))
 
 watch(
   () => props.prefill,
