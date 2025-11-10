@@ -18,7 +18,8 @@
           type="text"
           maxlength="100"
           placeholder="Иван"
-          class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring"
+          :disabled="locked"
+          class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring disabled:bg-slate-100"
         />
         <p v-if="errors.user_name" class="text-xs text-rose-500">{{ errors.user_name }}</p>
       </div>
@@ -29,7 +30,8 @@
           v-model.trim="form.email"
           type="email"
           placeholder="you@example.com"
-          class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring"
+          :disabled="locked"
+          class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring disabled:bg-slate-100"
         />
         <p v-if="errors.email" class="text-xs text-rose-500">{{ errors.email }}</p>
       </div>
@@ -79,7 +81,16 @@
 
     <div class="space-y-2">
       <div class="flex items-center gap-3">
-        <span class="rounded-md bg-slate-900 px-3 py-1 text-sm font-medium text-white tracking-widest">{{ captcha.value }}</span>
+        <div class="flex h-12 w-28 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <img
+            v-if="captcha.image"
+            :src="captcha.image"
+            :alt="`Код ${captcha.value}`"
+            class="h-full w-full select-none object-cover"
+            draggable="false"
+          />
+          <span v-else class="font-mono text-sm tracking-[0.4em] text-slate-700">{{ captcha.value }}</span>
+        </div>
         <button type="button" class="text-sm text-indigo-600 hover:text-indigo-500" @click="refreshCaptcha">Обновить</button>
       </div>
       <input
@@ -105,8 +116,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, toRefs } from 'vue'
+import { computed, nextTick, reactive, ref, toRefs, watch } from 'vue'
 import { sanitizeHtml } from '../utils/sanitizeHtml'
+import { createCaptcha } from '../utils/captcha'
 import type { CommentNode } from '../types/comment'
 
 interface AttachmentImage {
@@ -128,8 +140,20 @@ interface AttachmentText {
 
 export type Attachment = AttachmentImage | AttachmentText
 
-const props = defineProps<{ replyTo: CommentNode | null; loading: boolean }>()
+interface Prefill {
+  user_name: string
+  email: string
+  home_page: string
+}
+
+const props = defineProps<{
+  replyTo: CommentNode | null
+  loading: boolean
+  prefill?: Prefill
+  locked?: boolean
+}>()
 const { replyTo, loading } = toRefs(props)
+const locked = computed(() => props.locked ?? false)
 
 const emit = defineEmits<{
   (e: 'submit', payload: {
@@ -149,12 +173,19 @@ const form = reactive({
   text: ''
 })
 
-const generateCaptcha = () => Math.random().toString(36).slice(2, 8).toUpperCase()
-
 const captcha = reactive({
-  value: generateCaptcha(),
+  value: '',
+  image: '',
   input: ''
 })
+
+const assignCaptcha = () => {
+  const next = createCaptcha()
+  captcha.value = next.value
+  captcha.image = next.image
+}
+
+assignCaptcha()
 
 const errors = reactive<Record<string, string>>({})
 const attachment = ref<Attachment | null>(null)
@@ -172,6 +203,24 @@ const actions = [
 type ActionTag = (typeof actions)[number]['tag']
 
 const preview = computed(() => sanitizeHtml(form.text))
+
+watch(
+  () => props.prefill,
+  (prefill: Prefill | undefined) => {
+    if (!prefill) {
+      if (!locked.value) {
+        form.user_name = ''
+        form.email = ''
+        form.home_page = ''
+      }
+      return
+    }
+    form.user_name = prefill.user_name
+    form.email = prefill.email
+    form.home_page = prefill.home_page
+  },
+  { immediate: true }
+)
 
 const validate = () => {
   errors.user_name = ''
@@ -214,13 +263,13 @@ const handleSubmit = () => {
     attachment: attachment.value
   })
   form.text = ''
-  captcha.value = generateCaptcha()
+  assignCaptcha()
   captcha.input = ''
   removeFile()
 }
 
 const refreshCaptcha = () => {
-  captcha.value = generateCaptcha()
+  assignCaptcha()
   captcha.input = ''
 }
 

@@ -15,9 +15,24 @@
         </div>
       </header>
 
+      <section v-if="isAuthenticated" class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-100 bg-white px-5 py-4 shadow-sm">
+        <div>
+          <p class="text-sm font-semibold text-slate-800">{{ auth.state.username }}</p>
+          <p v-if="auth.state.email" class="text-xs text-indigo-500">{{ auth.state.email }}</p>
+        </div>
+        <button
+          class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 hover:border-rose-500 hover:text-rose-500"
+          type="button"
+          @click="logout"
+        >Выйти</button>
+      </section>
+      <AuthPanel v-else />
+
       <CommentForm
         :reply-to="replyTarget"
         :loading="submitting"
+        :prefill="commentPrefill"
+        :locked="lockForm"
         @submit="submit"
         @cancel-reply="replyTarget = null"
       />
@@ -45,9 +60,9 @@
           <div class="text-sm text-slate-500">Всего: {{ total }} · Страница {{ page }} из {{ totalPages }}</div>
         </div>
 
-  <div v-if="loading" class="py-16 text-center text-slate-500">Загрузка…</div>
-  <p v-else-if="error" class="py-16 text-center text-rose-500">{{ error }}</p>
-  <CommentList v-else :comments="currentPage" @reply="setReply" />
+    <div v-if="loading" class="py-16 text-center text-slate-500">Загрузка…</div>
+    <p v-else-if="error" class="py-16 text-center text-rose-500">{{ error }}</p>
+    <CommentList v-else :comments="currentPage" @reply="setReply" />
 
   <footer class="flex items-center justify-between border-t border-gray-100 px-5 py-4 text-sm text-slate-600">
           <button
@@ -82,10 +97,15 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import CommentForm, { type Attachment } from './components/CommentForm.vue'
 import CommentList from './components/CommentList.vue'
+import AuthPanel from './components/AuthPanel.vue'
 import { fetchComments, createComment } from './services/comments'
 import { buildTree, sortTree } from './utils/comments'
 import type { CommentNode, CommentRecord, SortDirection, SortField } from './types/comment'
 import { sanitizeHtml } from './utils/sanitizeHtml'
+import { useAuth } from './stores/auth'
+
+const auth = useAuth()
+const isAuthenticated = auth.isAuthenticated
 
 const raw = ref<CommentRecord[]>([])
 const loading = ref(false)
@@ -98,6 +118,20 @@ const sortDirection = ref<SortDirection>('desc')
 const page = ref(1)
 const pageSize = 25
 const pendingAttachment = ref<Attachment | null>(null)
+
+const commentPrefill = computed(() => {
+  if (!isAuthenticated.value) return undefined
+  return {
+    user_name: auth.state.username,
+    email: auth.state.email,
+    home_page: auth.state.homePage
+  }
+})
+
+const lockForm = computed(() => {
+  if (!isAuthenticated.value) return false
+  return Boolean(auth.state.username && auth.state.email)
+})
 
 const load = async () => {
   loading.value = true
@@ -145,6 +179,10 @@ const setReply = (comment: CommentNode) => {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
+const logout = () => {
+  auth.logout()
+}
+
 const submit = async ({ user_name, email, home_page, text, attachment }: {
   user_name: string
   email: string
@@ -167,6 +205,9 @@ const submit = async ({ user_name, email, home_page, text, attachment }: {
     raw.value = [{ ...saved, text: sanitizeHtml(saved.text) }, ...raw.value]
     replyTarget.value = null
     page.value = 1
+    if (isAuthenticated.value) {
+      auth.setProfile({ email, homePage: home_page })
+    }
   } catch (err) {
     formError.value = err instanceof Error ? err.message : 'Не удалось сохранить комментарий'
   } finally {
