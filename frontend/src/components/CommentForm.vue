@@ -105,10 +105,11 @@
     <div class="space-y-3">
       <div class="flex items-center gap-2">
         <h3 class="text-sm font-medium text-slate-600">Предпросмотр</h3>
-        <span v-if="!hasPreviewContent" class="text-xs text-slate-400"></span>
+        <span v-if="!hasPreviewContent" class="text-xs text-slate-400">Нет данных для предпросмотра</span>
       </div>
       <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 space-y-3 text-slate-700">
-        <div v-if="previewHtml" class="whitespace-pre-wrap break-words leading-relaxed" v-html="previewHtml" />
+        <p v-if="markupError" class="text-xs text-rose-500">Ошибка разметки: {{ markupError }}</p>
+        <div v-else-if="previewHtml" class="whitespace-pre-wrap break-words leading-relaxed" v-html="previewHtml" />
         <div v-if="attachment" class="rounded-xl border border-slate-200 bg-white p-3">
           <div class="flex items-center gap-3 text-xs text-slate-600">
             <img
@@ -225,6 +226,34 @@ const actions = [
 ] as const
 
 type ActionTag = (typeof actions)[number]['tag']
+const allowedTags: ActionTag[] = actions.map(action => action.tag)
+const validateMarkup = (value: string) => {
+  const stack: string[] = []
+  const tagPattern = /<\/?([a-z]+)(?:\s[^>]*)?>/gi
+  let match: RegExpExecArray | null
+
+  while ((match = tagPattern.exec(value))) {
+    const tag = (match[1] ?? '').toLowerCase()
+    if (!tag) continue
+    if (!allowedTags.includes(tag as ActionTag)) continue
+
+    const isClosing = match[0][1] === '/'
+    if (!isClosing) {
+      stack.push(tag)
+    } else {
+      if (!stack.length || stack[stack.length - 1] !== tag) {
+        return `Тег </${tag}> закрыт некорректно`
+      }
+      stack.pop()
+    }
+  }
+
+  if (stack.length) {
+    return `Тег <${stack[stack.length - 1]}> не закрыт`
+  }
+
+  return ''
+}
 
 watch(
   () => props.prefill,
@@ -266,7 +295,14 @@ const validate = () => {
     }
   }
 
-  if (!form.text.trim()) errors.text = 'Введите сообщение'
+  if (!form.text.trim()) {
+    errors.text = 'Введите сообщение'
+  } else {
+    const markupIssue = validateMarkup(form.text)
+    if (markupIssue) {
+      errors.text = markupIssue
+    }
+  }
 
   if (!captcha.input || captcha.input.toUpperCase() !== captcha.value) {
     errors.captcha = 'Неверный код'
@@ -407,4 +443,5 @@ const processText = async (file: File): Promise<AttachmentText> => {
 
 const previewHtml = computed(() => sanitizeHtml(form.text))
 const hasPreviewContent = computed(() => Boolean(form.text.trim()) || !!attachment.value)
+const markupError = computed(() => (!form.text.trim() ? '' : validateMarkup(form.text)))
 </script>
