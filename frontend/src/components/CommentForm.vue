@@ -102,6 +102,35 @@
       <p v-if="errors.captcha" class="text-xs text-rose-500">{{ errors.captcha }}</p>
     </div>
 
+    <div class="space-y-3">
+      <div class="flex items-center gap-2">
+        <h3 class="text-sm font-medium text-slate-600">Предпросмотр</h3>
+        <span v-if="!hasPreviewContent" class="text-xs text-slate-400"></span>
+      </div>
+      <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 space-y-3 text-slate-700">
+        <div v-if="previewHtml" class="whitespace-pre-wrap break-words leading-relaxed" v-html="previewHtml" />
+        <div v-if="attachment" class="rounded-xl border border-slate-200 bg-white p-3">
+          <div class="flex items-center gap-3 text-xs text-slate-600">
+            <img
+              v-if="attachment.type === 'image'"
+              :src="attachment.preview"
+              :alt="attachment.name"
+              class="h-16 w-16 rounded-md object-cover"
+            />
+            <div class="flex-1">
+              <p class="font-medium text-slate-700">{{ attachment.name }}</p>
+              <template v-if="attachment.type === 'image'">
+                <p class="text-slate-500">{{ attachment.width }}×{{ attachment.height }} px</p>
+              </template>
+              <template v-else>
+                <p class="max-h-32 overflow-auto whitespace-pre-wrap text-slate-500">{{ attachment.textPreview }}</p>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <button
       type="submit"
       class="w-full rounded-lg bg-indigo-600 px-4 py-3 text-white font-semibold hover:bg-indigo-500 transition disabled:bg-indigo-300"
@@ -113,6 +142,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, toRefs, watch } from 'vue'
 import { createCaptcha } from '../utils/captcha'
+import { sanitizeHtml } from '../utils/sanitizeHtml'
 import type { CommentNode } from '../types/comment'
 
 interface AttachmentImage {
@@ -374,4 +404,7 @@ const processText = async (file: File): Promise<AttachmentText> => {
     file
   }
 }
+
+const previewHtml = computed(() => sanitizeHtml(form.text))
+const hasPreviewContent = computed(() => Boolean(form.text.trim()) || !!attachment.value)
 </script>
