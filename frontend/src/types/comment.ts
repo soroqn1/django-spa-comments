@@ -14,6 +14,9 @@ export interface CommentRecord {
   attachment_width: number
   attachment_height: number
   attachment_text_preview: string
+  score: number
+  user_vote: number
+  is_bookmarked: boolean
 }
 
 export interface CommentNode extends CommentRecord {

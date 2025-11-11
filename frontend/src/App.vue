@@ -62,7 +62,7 @@
 
     <div v-if="loading" class="py-16 text-center text-slate-500">Загрузка…</div>
     <p v-else-if="error" class="py-16 text-center text-rose-500">{{ error }}</p>
-    <CommentList v-else :comments="currentPage" @reply="setReply" />
+  <CommentList v-else :comments="currentPage" @reply="setReply" @updated="mergeComment" />
 
   <footer class="flex items-center justify-between border-t border-gray-100 px-5 py-4 text-sm text-slate-600">
           <button
@@ -94,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import CommentForm, { type Attachment } from './components/CommentForm.vue'
 import CommentList from './components/CommentList.vue'
 import AuthPanel from './components/AuthPanel.vue'
@@ -107,6 +107,14 @@ import { useAuth } from './stores/auth'
 const auth = useAuth()
 const isAuthenticated = auth.isAuthenticated
 
+const toSafeRecord = (record: CommentRecord): CommentRecord => ({
+  ...record,
+  text: sanitizeHtml(record.text),
+  score: record.score ?? 0,
+  user_vote: record.user_vote ?? 0,
+  is_bookmarked: record.is_bookmarked ?? false
+})
+
 const raw = ref<CommentRecord[]>([])
 const loading = ref(false)
 const error = ref('')
@@ -118,6 +126,9 @@ const sortDirection = ref<SortDirection>('desc')
 const page = ref(1)
 const pageSize = 25
 const pendingAttachment = ref<Attachment | null>(null)
+
+const socket = ref<WebSocket | null>(null)
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
 const commentPrefill = computed(() => {
   if (!isAuthenticated.value) return undefined
@@ -133,12 +144,134 @@ const lockForm = computed(() => {
   return Boolean(auth.state.username && auth.state.email)
 })
 
+const upsertComment = (record: CommentRecord, preserveUserState = false) => {
+  const safe = toSafeRecord(record)
+  const index = raw.value.findIndex((item) => item.id === safe.id)
+  if (index === -1) {
+    raw.value = [...raw.value, safe]
+  } else {
+  const current = raw.value[index]!
+    const next = preserveUserState
+      ? {
+          ...current,
+          ...safe,
+          user_vote: current.user_vote,
+          is_bookmarked: current.is_bookmarked
+        }
+      : { ...current, ...safe }
+    raw.value = raw.value.map((item, idx) => (idx === index ? next : item))
+  }
+}
+
+const removeComment = (id: number) => {
+  const toRemove = new Set<number>([id])
+  let expanded = true
+  while (expanded) {
+    expanded = false
+    for (const item of raw.value) {
+      if (item.parent && toRemove.has(item.parent) && !toRemove.has(item.id)) {
+        toRemove.add(item.id)
+        expanded = true
+      }
+    }
+  }
+  raw.value = raw.value.filter((item) => !toRemove.has(item.id))
+}
+
+const resolveWebSocketUrl = () => {
+  const override = import.meta.env.VITE_WS_BASE_URL
+  if (override) {
+    return `${override.replace(/\/$/, '')}/ws/comments/`
+  }
+
+  const apiBase = import.meta.env.VITE_API_BASE_URL
+  if (apiBase) {
+    try {
+      const url = new URL(apiBase.replace(/\/$/, ''))
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+      return `${url.origin}/ws/comments/`
+    } catch (_) {
+      // ignore malformed URLs
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    return `${protocol}://${window.location.host}/ws/comments/`
+  }
+
+  return 'ws://localhost:8000/ws/comments/'
+}
+
+const scheduleReconnect = () => {
+  if (reconnectTimer) return
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null
+    connectSocket()
+  }, 2000)
+}
+
+const handleSocketEvent = (data: unknown) => {
+  if (!data || typeof data !== 'object') return
+  const payload = data as { type?: string; comment?: CommentRecord; comment_id?: number }
+  if (payload.type === 'comment_update' && payload.comment) {
+    upsertComment(payload.comment, true)
+  } else if (payload.type === 'comment_delete' && typeof payload.comment_id === 'number') {
+    removeComment(payload.comment_id)
+  }
+}
+
+const connectSocket = () => {
+  if (typeof window === 'undefined') return
+
+  const url = resolveWebSocketUrl()
+  try {
+    const ws = new WebSocket(url)
+    socket.value = ws
+
+    ws.onopen = () => {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer)
+        reconnectTimer = null
+      }
+    }
+    ws.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(event.data)
+        handleSocketEvent(parsed)
+      } catch (err) {
+        console.warn('Не удалось разобрать сообщение WebSocket', err)
+      }
+    }
+    ws.onclose = () => {
+      scheduleReconnect()
+    }
+    ws.onerror = () => {
+      ws.close()
+    }
+  } catch (err) {
+    console.warn('Не удалось подключиться к WebSocket', err)
+    scheduleReconnect()
+  }
+}
+
+const teardownSocket = () => {
+  if (socket.value) {
+    socket.value.close()
+    socket.value = null
+  }
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+}
+
 const load = async () => {
   loading.value = true
   error.value = ''
   try {
     const data = await fetchComments()
-    raw.value = data
+    raw.value = data.map(toSafeRecord)
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Не удалось загрузить данные'
   } finally {
@@ -146,11 +279,16 @@ const load = async () => {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  connectSocket()
+})
 
-const sanitized = computed(() =>
-  raw.value.map((record) => ({ ...record, text: sanitizeHtml(record.text) }))
-)
+onUnmounted(() => {
+  teardownSocket()
+})
+
+const sanitized = computed(() => raw.value)
 
 const tree = computed(() => buildTree(sanitized.value))
 const sorted = computed(() => sortTree(tree.value, sortField.value, sortDirection.value))
@@ -179,6 +317,10 @@ const setReply = (comment: CommentNode) => {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
+const mergeComment = (updated: CommentRecord) => {
+  upsertComment(updated)
+}
+
 const logout = () => {
   auth.logout()
 }
@@ -202,7 +344,7 @@ const submit = async ({ user_name, email, home_page, text, attachment }: {
       parent: replyTarget.value?.id ?? null
     }
     const saved = await createComment(payload, attachment?.file ?? null)
-    raw.value = [{ ...saved, text: sanitizeHtml(saved.text) }, ...raw.value]
+    upsertComment(saved)
     replyTarget.value = null
     page.value = 1
     if (isAuthenticated.value) {

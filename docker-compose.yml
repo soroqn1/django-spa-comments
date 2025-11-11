@@ -11,6 +11,12 @@ services:
     ports:
       - "5432:5432"
 
+  redis:
+    image: redis:7
+    container_name: comments_redis
+    ports:
+      - "6379:6379"
+
   backend:
     build: ./backend
     container_name: comments_backend
@@ -21,6 +27,25 @@ services:
       - "8000:8000"
     depends_on:
       - db
+      - redis
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+
+  celery:
+    build: ./backend
+    container_name: comments_celery
+    command: celery -A core worker -l info
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - db
+      - redis
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
 
 volumes:
   postgres_data:

@@ -33,3 +33,52 @@ class Comment(models.Model):
     def __str__(self):
         return f"{self.user_name}: {self.text[:30]}"
 
+
+class CommentVote(models.Model):
+    UPVOTE = 1
+    DOWNVOTE = -1
+    VALUE_CHOICES = (
+        (UPVOTE, 'Upvote'),
+        (DOWNVOTE, 'Downvote'),
+    )
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='comment_votes'
+    )
+    comment = models.ForeignKey(
+        Comment,
+        on_delete=models.CASCADE,
+        related_name='votes'
+    )
+    value = models.SmallIntegerField(choices=VALUE_CHOICES)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('user', 'comment')
+
+    def __str__(self):
+        return f"Vote({self.user_id} -> {self.comment_id} = {self.value})"
+
+
+class CommentBookmark(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='comment_bookmarks'
+    )
+    comment = models.ForeignKey(
+        Comment,
+        on_delete=models.CASCADE,
+        related_name='bookmarks'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'comment')
+
+    def __str__(self):
+        return f"Bookmark({self.user_id} -> {self.comment_id})"
+

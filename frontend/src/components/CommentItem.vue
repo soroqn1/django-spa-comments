@@ -8,11 +8,11 @@
       :name="comment.user_name"
       :created-at="comment.created_at"
       :avatar="avatar"
-      :score="displayScore"
-      :bookmark-active="bookmarked"
+      :score="score"
+      :bookmark-active="bookmarkActive"
       :user-vote="userVote"
       @copy-link="copyPermalink"
-      @bookmark="toggleBookmark"
+      @bookmark="handleBookmark"
       @reply="emit('reply', comment)"
       @show-history="showHistory"
       @vote="handleVote"
@@ -74,6 +74,7 @@
         :comment="child"
         :depth="depth + 1"
         @reply="emit('reply', $event)"
+        @updated="emit('updated', $event)"
       />
     </div>
 
@@ -99,9 +100,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, type CSSProperties } from 'vue'
+import { computed, onBeforeUnmount, ref, type CSSProperties } from 'vue'
 import CommentHeader from './CommentHeader.vue'
-import type { CommentNode } from '../types/comment'
+import type { CommentNode, CommentRecord } from '../types/comment'
+import { toggleBookmark, voteComment } from '../services/comments'
+import { useAuth } from '../stores/auth'
 
 const props = defineProps<{
   comment: CommentNode
@@ -110,7 +113,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'reply', comment: CommentNode): void
+  (e: 'updated', comment: CommentRecord): void
 }>()
+
+const auth = useAuth()
 
 const depth = computed(() => props.depth ?? 0)
 const MAX_THREAD_DEPTH = 5
@@ -165,6 +171,9 @@ const closePreview = () => {
 }
 
 const createdAtLabel = computed(() => new Date(props.comment.created_at).toLocaleString())
+const score = computed(() => props.comment.score ?? 0)
+const bookmarkActive = computed(() => props.comment.is_bookmarked ?? false)
+const userVote = computed(() => props.comment.user_vote ?? 0)
 
 const feedbackMessage = ref('')
 const feedbackTone = ref<'info' | 'success' | 'error'>('info')
@@ -187,82 +196,37 @@ const feedbackClass = computed(() => {
   return 'bg-[#f5f7fb] text-[#3b4256] border border-[#e2e8f5]'
 })
 
-const bookmarksKey = 'comments:bookmarks'
-const votesKey = 'comments:votes'
-
-const bookmarked = ref(false)
-const userVote = ref(0)
-const baseScore = computed(() => {
-  const maybe = (props.comment as unknown as { vote_score?: number }).vote_score
-  return typeof maybe === 'number' ? maybe : 0
-})
-const displayScore = computed(() => baseScore.value + userVote.value)
-
-const loadBookmarks = () => {
-  if (typeof window === 'undefined') return [] as number[]
-  try {
-    const raw = window.localStorage.getItem(bookmarksKey)
-    if (!raw) return [] as number[]
-    const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed)) {
-      return parsed.filter((id): id is number => typeof id === 'number')
-    }
-  } catch (err) {
-    console.warn('Не удалось прочитать закладки', err)
+const ensureAuth = () => {
+  if (!auth.isAuthenticated.value) {
+    setFeedback('Нужно войти, чтобы выполнить действие', 'error')
+    return false
   }
-  return [] as number[]
+  return true
 }
 
-const persistBookmarks = (ids: number[]) => {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(bookmarksKey, JSON.stringify(ids))
-  } catch (err) {
-    console.warn('Не удалось сохранить закладки', err)
-  }
+const applyUpdate = (record: CommentRecord) => {
+  Object.assign(props.comment, {
+    text: record.text,
+    score: record.score,
+    user_vote: record.user_vote,
+    is_bookmarked: record.is_bookmarked
+  })
+  emit('updated', record)
 }
 
-const loadVotes = () => {
-  if (typeof window === 'undefined') return {} as Record<number, number>
+const handleBookmark = async () => {
+  if (!ensureAuth()) return
   try {
-    const raw = window.localStorage.getItem(votesKey)
-    if (!raw) return {} as Record<number, number>
-    const parsed = JSON.parse(raw)
-    if (parsed && typeof parsed === 'object') {
-      return Object.fromEntries(
-        Object.entries(parsed).map(([id, value]) => [Number(id), typeof value === 'number' ? value : 0])
-      ) as Record<number, number>
-    }
-  } catch (err) {
-    console.warn('Не удалось прочитать голоса', err)
+    const updated = await toggleBookmark(props.comment.id, bookmarkActive.value)
+    applyUpdate(updated)
+    setFeedback(
+      updated.is_bookmarked ? 'Комментарий сохранён в закладках' : 'Комментарий удалён из закладок',
+      updated.is_bookmarked ? 'success' : 'info'
+    )
+  } catch (error) {
+    console.warn('Не удалось обновить закладку', error)
+    setFeedback('Не удалось обновить закладку', 'error')
   }
-  return {} as Record<number, number>
-}
-
-const persistVotes = (votes: Record<number, number>) => {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(votesKey, JSON.stringify(votes))
-  } catch (err) {
-    console.warn('Не удалось сохранить голос', err)
-  }
-}
-
-const toggleBookmark = () => {
-  const ids = loadBookmarks()
-  if (bookmarked.value) {
-    const next = ids.filter(id => id !== props.comment.id)
-    bookmarked.value = false
-    persistBookmarks(next)
-    setFeedback('Комментарий удалён из закладок', 'info')
-    return
-  }
-  if (!ids.includes(props.comment.id)) {
-    ids.push(props.comment.id)
-    persistBookmarks(ids)
-  }
-  bookmarked.value = true
-  setFeedback('Комментарий сохранён в закладках', 'success')
 }
 
 const copyPermalink = async () => {
@@ -294,29 +258,23 @@ const showHistory = () => {
   setFeedback(`Комментарий опубликован ${createdAtLabel.value}`, 'info')
 }
 
-const handleVote = (direction: number) => {
+const handleVote = async (direction: number) => {
+  if (!ensureAuth()) return
   const normalized = direction > 0 ? 1 : -1
-  const votes = loadVotes()
-  if (userVote.value === normalized) {
-    userVote.value = 0
-    votes[props.comment.id] = 0
-    persistVotes(votes)
-    setFeedback('Ваш голос сброшен', 'info')
-    return
+  const target = userVote.value === normalized ? 0 : normalized
+  try {
+    const updated = await voteComment(props.comment.id, target)
+    applyUpdate(updated)
+    if (target === 0) {
+      setFeedback('Ваш голос сброшен', 'info')
+    } else {
+      setFeedback(target === 1 ? 'Вы поддержали комментарий' : 'Вы пожаловались на комментарий', 'success')
+    }
+  } catch (error) {
+    console.warn('Не удалось обновить голос', error)
+    setFeedback('Не удалось обновить голос', 'error')
   }
-  userVote.value = normalized
-  votes[props.comment.id] = normalized
-  persistVotes(votes)
-  setFeedback(normalized === 1 ? 'Вы поддержали комментарий' : 'Вы пожаловались на комментарий', 'success')
 }
-
-onMounted(() => {
-  const ids = loadBookmarks()
-  bookmarked.value = ids.includes(props.comment.id)
-
-  const votes = loadVotes()
-  userVote.value = votes[props.comment.id] ?? 0
-})
 
 onBeforeUnmount(() => {
   if (feedbackTimer) {

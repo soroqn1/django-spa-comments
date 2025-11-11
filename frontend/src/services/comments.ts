@@ -34,3 +34,20 @@ export const createComment = async (
 
   return http<CommentRecord>('comments/', { method: 'POST', json: jsonPayload })
 }
+
+export const voteComment = (id: number, value: -1 | 0 | 1) => {
+  if (value === 0) {
+    return http<CommentRecord>(`comments/${id}/vote/`, { method: 'DELETE' })
+  }
+  return http<CommentRecord>(`comments/${id}/vote/`, {
+    method: 'POST',
+    json: { value }
+  })
+}
+
+export const toggleBookmark = (id: number, active: boolean) => {
+  if (active) {
+    return http<CommentRecord>(`comments/${id}/bookmark/`, { method: 'DELETE' })
+  }
+  return http<CommentRecord>(`comments/${id}/bookmark/`, { method: 'POST' })
+}

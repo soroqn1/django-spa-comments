@@ -1,10 +1,11 @@
 import mimetypes
 
 from django.conf import settings
+from django.db.models import Sum
 from PIL import Image, UnidentifiedImageError
 from rest_framework import serializers
 
-from .models import Comment
+from .models import Comment, CommentBookmark
 from bleach.sanitizer import Cleaner
 
 
@@ -31,6 +32,9 @@ cleaner = Cleaner(
 
 class CommentSerializer(serializers.ModelSerializer):
     attachment_url = serializers.SerializerMethodField(read_only=True)
+    score = serializers.SerializerMethodField(read_only=True)
+    user_vote = serializers.SerializerMethodField(read_only=True)
+    is_bookmarked = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Comment
@@ -51,6 +55,9 @@ class CommentSerializer(serializers.ModelSerializer):
             'attachment_height',
             'attachment_text_preview',
             'attachment_url',
+            'score',
+            'user_vote',
+            'is_bookmarked',
         ]
         read_only_fields = [
             'id',
@@ -62,6 +69,9 @@ class CommentSerializer(serializers.ModelSerializer):
             'attachment_width',
             'attachment_height',
             'attachment_text_preview',
+            'score',
+            'user_vote',
+            'is_bookmarked',
         ]
         extra_kwargs = {
             'attachment': {'write_only': True, 'required': False, 'allow_null': True},
@@ -90,6 +100,30 @@ class CommentSerializer(serializers.ModelSerializer):
         if not cleaned.strip():
             raise serializers.ValidationError('Введите сообщение')
         return cleaned
+
+    def get_score(self, obj: Comment):
+        if hasattr(obj, 'score') and obj.score is not None:
+            return int(obj.score)
+        return int(obj.votes.aggregate(total=Sum('value'))['total'] or 0)
+
+    def get_user_vote(self, obj: Comment):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or not user.is_authenticated:
+            return 0
+        if hasattr(obj, 'user_vote') and obj.user_vote is not None:
+            return int(obj.user_vote)
+        vote = obj.votes.filter(user=user).first()
+        return int(vote.value) if vote else 0
+
+    def get_is_bookmarked(self, obj: Comment):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or not user.is_authenticated:
+            return False
+        if hasattr(obj, 'is_bookmarked') and obj.is_bookmarked is not None:
+            return bool(obj.is_bookmarked)
+        return CommentBookmark.objects.filter(user=user, comment=obj).exists()
 
     def create(self, validated_data):
         attachment = validated_data.get('attachment')

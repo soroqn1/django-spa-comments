@@ -7,6 +7,7 @@
         :key="comment.id"
         :comment="comment"
         @reply="emit('reply', $event)"
+        @updated="emit('updated', $event)"
       />
     </div>
   </div>
@@ -15,12 +16,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import CommentItem from './CommentItem.vue'
-import type { CommentNode } from '../types/comment'
+import type { CommentNode, CommentRecord } from '../types/comment'
 
 const props = defineProps<{ comments: CommentNode[] }>()
 
 const emit = defineEmits<{
   (e: 'reply', comment: CommentNode): void
+  (e: 'updated', comment: CommentRecord): void
 }>()
 
 const items = computed(() => props.comments)

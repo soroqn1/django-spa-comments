@@ -3,6 +3,9 @@ djangorestframework
 psycopg2-binary
 django-cors-headers
 djangorestframework-simplejwt
-django-cors-headers
 Pillow
 bleach
+celery
+redis
+channels
+channels-redis
