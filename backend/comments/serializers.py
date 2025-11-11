@@ -1,4 +1,5 @@
 import mimetypes
+import re
 
 from django.conf import settings
 from django.db.models import Sum
@@ -19,6 +20,8 @@ MAX_TEXT_SIZE = 100 * 1024
 ALLOWED_TAGS = ['a', 'code', 'i', 'strong']
 ALLOWED_ATTRS = {'a': ['href', 'title']}
 ALLOWED_PROTOCOLS = ['http', 'https', 'mailto']
+ALLOWED_TAG_SET = set(ALLOWED_TAGS)
+TAG_PATTERN = re.compile(r'<\s*/?\s*([a-z0-9]+)[^>]*>', re.IGNORECASE)
 
 
 cleaner = Cleaner(
@@ -96,7 +99,13 @@ class CommentSerializer(serializers.ModelSerializer):
         raise serializers.ValidationError('Допустимы только PNG, JPG, GIF или TXT')
 
     def validate_text(self, value: str):
-        cleaned = cleaner.clean(value or '')
+        raw = value or ''
+        for match in TAG_PATTERN.finditer(raw):
+            tag = (match.group(1) or '').lower()
+            if tag and tag not in ALLOWED_TAG_SET:
+                raise serializers.ValidationError(f'Тег <{tag}> не поддерживается')
+
+        cleaned = cleaner.clean(raw)
         if not cleaned.strip():
             raise serializers.ValidationError('Введите сообщение')
         return cleaned

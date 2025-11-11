@@ -231,7 +231,8 @@ const handleBookmark = async () => {
 
 const copyPermalink = async () => {
   if (typeof window === 'undefined') return
-  const url = `${window.location.origin}${window.location.pathname}#${anchorId.value}`
+  const hash = `#${anchorId.value}`
+  const url = `${window.location.origin}${window.location.pathname}${hash}`
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       await navigator.clipboard.writeText(url)
@@ -246,7 +247,14 @@ const copyPermalink = async () => {
       window.document.execCommand('copy')
       window.document.body.removeChild(textarea)
     }
-    window.history.replaceState({}, '', `#${anchorId.value}`)
+    if (window.location.hash !== hash) {
+      window.location.hash = anchorId.value
+    } else {
+      const el = window.document.getElementById(anchorId.value)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }
     setFeedback('Ссылка на комментарий скопирована', 'success')
   } catch (err) {
     console.warn('Не удалось скопировать ссылку', err)

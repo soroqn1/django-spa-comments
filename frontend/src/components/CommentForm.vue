@@ -235,7 +235,9 @@ const validateMarkup = (value: string) => {
   while ((match = tagPattern.exec(value))) {
     const tag = (match[1] ?? '').toLowerCase()
     if (!tag) continue
-    if (!allowedTags.includes(tag as ActionTag)) continue
+    if (!allowedTags.includes(tag as ActionTag)) {
+      return `Тег <${tag}> не поддерживается`
+    }
 
     const isClosing = match[0][1] === '/'
     if (!isClosing) {

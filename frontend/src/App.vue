@@ -94,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import CommentForm, { type Attachment } from './components/CommentForm.vue'
 import CommentList from './components/CommentList.vue'
 import AuthPanel from './components/AuthPanel.vue'
@@ -129,6 +129,62 @@ const pendingAttachment = ref<Attachment | null>(null)
 
 const socket = ref<WebSocket | null>(null)
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+const hashCommentId = ref<number | null>(null)
+
+const parseHash = () => {
+  if (typeof window === 'undefined') return null
+  const match = window.location.hash.match(/^#comment-(\d+)/)
+  return match ? Number(match[1]) : null
+}
+
+const containsComment = (node: CommentNode, target: number): boolean => {
+  if (node.id === target) return true
+  for (const child of node.replies) {
+    if (containsComment(child, target)) return true
+  }
+  return false
+}
+
+const locateRootIndex = (nodes: CommentNode[], target: number) => {
+  for (let i = 0; i < nodes.length; i += 1) {
+    const node = nodes[i]
+    if (node && containsComment(node, target)) {
+      return i
+    }
+  }
+  return -1
+}
+
+const ensureCommentVisible = async (target: number | null, opts: { retainHash?: boolean } = {}) => {
+  if (!target) return
+  if (typeof window === 'undefined') return
+
+  const nodes = sorted.value
+  if (!nodes.length) return
+
+  const rootIndex = locateRootIndex(nodes, target)
+  if (rootIndex === -1) return
+
+  const targetPage = Math.floor(rootIndex / pageSize) + 1
+  if (page.value !== targetPage) {
+    page.value = targetPage
+    await nextTick()
+  }
+
+  await nextTick()
+  const el = window.document.getElementById(`comment-${target}`)
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (!opts.retainHash && window.location.hash !== `#comment-${target}`) {
+      window.history.replaceState({}, '', `#comment-${target}`)
+    }
+  }
+}
+
+const onHashChange = () => {
+  hashCommentId.value = parseHash()
+  ensureCommentVisible(hashCommentId.value, { retainHash: true })
+}
 
 const commentPrefill = computed(() => {
   if (!isAuthenticated.value) return undefined
@@ -150,7 +206,7 @@ const upsertComment = (record: CommentRecord, preserveUserState = false) => {
   if (index === -1) {
     raw.value = [...raw.value, safe]
   } else {
-  const current = raw.value[index]!
+    const current = raw.value[index]!
     const next = preserveUserState
       ? {
           ...current,
@@ -272,6 +328,7 @@ const load = async () => {
   try {
     const data = await fetchComments()
     raw.value = data.map(toSafeRecord)
+  await ensureCommentVisible(hashCommentId.value, { retainHash: true })
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Не удалось загрузить данные'
   } finally {
@@ -280,32 +337,90 @@ const load = async () => {
 }
 
 onMounted(() => {
+  hashCommentId.value = parseHash()
   load()
   connectSocket()
+  if (typeof window !== 'undefined') {
+    window.addEventListener('hashchange', onHashChange)
+  }
 })
 
 onUnmounted(() => {
   teardownSocket()
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('hashchange', onHashChange)
+  }
 })
 
 const sanitized = computed(() => raw.value)
 
 const tree = computed(() => buildTree(sanitized.value))
 const sorted = computed(() => sortTree(tree.value, sortField.value, sortDirection.value))
-const total = computed(() => sorted.value.length)
+const cloneBranch = (node: CommentNode): CommentNode => ({
+  ...node,
+  replies: node.replies.map((child) => cloneBranch(child))
+})
+
+const filterToBranch = (node: CommentNode, target: number): CommentNode | null => {
+  if (node.id === target) {
+    return {
+      ...node,
+      replies: node.replies.map((child) => cloneBranch(child))
+    }
+  }
+
+  const replies = node.replies
+    .map((child) => filterToBranch(child, target))
+    .filter((child): child is CommentNode => Boolean(child))
+
+  if (replies.length) {
+    return {
+      ...node,
+      replies
+    }
+  }
+
+  return null
+}
+
+const filtered = computed(() => {
+  const target = hashCommentId.value
+  if (!target) return sorted.value
+
+  for (const node of sorted.value) {
+    const branch = filterToBranch(node, target)
+    if (branch) {
+      return [branch]
+    }
+  }
+
+  return sorted.value
+})
+
+const total = computed(() => filtered.value.length)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 
 const currentPage = computed(() => {
   const start = (page.value - 1) * pageSize
-  return sorted.value.slice(start, start + pageSize)
+  return filtered.value.slice(start, start + pageSize)
 })
 
-watch([sortField, sortDirection], () => {
+watch([sortField, sortDirection], async () => {
   page.value = 1
+  await nextTick()
+  if (hashCommentId.value) {
+    await ensureCommentVisible(hashCommentId.value, { retainHash: true })
+  }
 })
 
-watch(totalPages, (next) => {
-  if (page.value > next) page.value = next
+watch(totalPages, async (next) => {
+  if (page.value > next) {
+    page.value = next
+    await nextTick()
+  }
+  if (hashCommentId.value) {
+    await ensureCommentVisible(hashCommentId.value, { retainHash: true })
+  }
 })
 
 const toggleDirection = () => {
