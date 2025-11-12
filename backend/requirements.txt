@@ -9,3 +9,4 @@ celery
 redis
 channels
 channels-redis
+dj-database-url
