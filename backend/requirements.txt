@@ -11,3 +11,4 @@ channels
 channels-redis
 dj-database-url
 gunicorn
+whitenoise
