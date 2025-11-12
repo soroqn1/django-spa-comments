@@ -5,7 +5,7 @@ interface RequestOptions extends RequestInit {
 type AccessTokenProvider = () => string | null
 type UnauthorizedHandler = () => Promise<boolean>
 
-const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+const API_URL = (import.meta.env.VITE_API_URL || 'https://django-spa-comments.onrender.com').replace(/\/$/, '')
 const baseUrl = () => `${API_URL}/api`
 
 let tokenProvider: AccessTokenProvider | null = null
