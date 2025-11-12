@@ -64,6 +64,7 @@ REST_FRAMEWORK = {
 CORS_ALLOW_ALL_ORIGINS = True
 CSRF_TRUSTED_ORIGINS = [
     "https://django-spa-comments.vercel.app",
+    "https://django-spa-comments.onrender.com",
 ]
 CORS_ALLOW_CREDENTIALS = True
 
