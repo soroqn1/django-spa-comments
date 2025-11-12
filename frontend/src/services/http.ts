@@ -5,7 +5,8 @@ interface RequestOptions extends RequestInit {
 type AccessTokenProvider = () => string | null
 type UnauthorizedHandler = () => Promise<boolean>
 
-const baseUrl = () => import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? 'http://localhost:8000/api'
+const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+const baseUrl = () => `${API_URL}/api`
 
 let tokenProvider: AccessTokenProvider | null = null
 let unauthorizedHandler: UnauthorizedHandler | null = null
